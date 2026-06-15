@@ -95,6 +95,7 @@
     <button class="tbtn" data-tool="rect">▭ 四角</button>
     <button class="tbtn" data-tool="arrow">➡️ 矢印</button>
     <button class="tbtn" data-tool="text">🅰️ 文字</button>
+    <button class="tbtn" data-tool="move">🖐️ 移動</button>
     <span class="sep"></span>
     <span class="label">色</span>
     <span class="swatch" style="background:#ff5fa2" data-color="#ff5fa2"></span>
@@ -125,7 +126,7 @@
     <button class="pbtn" id="downloadBtn" disabled>⬇️ ダウンロード</button>
     <button class="pbtn ghost" id="copyBtn" disabled>📋 コピー</button>
   </div>
-  <div class="hint">枠線=ワンクリックで外周に細枠 / 四角・矢印=ドラッグ / 文字=クリックして入力</div>
+  <div class="hint">枠線=ワンクリックで外周に細枠 / 四角・矢印=ドラッグ / 文字=クリックして入力 / 🖐️移動=ドラッグで位置変え</div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -151,6 +152,7 @@
   /* ---------- ツール選択 ---------- */
   function setTool(t){
     tool = t;
+    canvas.style.cursor = (t === "move") ? "grab" : "crosshair";
     document.querySelectorAll(".tbtn[data-tool]").forEach(function(b){
       b.classList.toggle("active", b.getAttribute("data-tool") === t);
     });
@@ -252,7 +254,7 @@
 
   /* ---------- 描画 ---------- */
   function drawArrow(c, x1,y1,x2,y2, col, w){
-    var head = Math.max(8, w*4);
+    var head = Math.max(14, w*6);
     var ang = Math.atan2(y2-y1, x2-x1);
     c.strokeStyle = col; c.fillStyle = col;
     c.lineWidth = w; c.lineCap = "round";
@@ -290,9 +292,37 @@
     }
   }
 
+  /* ---------- 当たり判定（移動用） ---------- */
+  var moveTarget = null;
+  var lastMovePt = null;
+  function annBBox(a){
+    if(a.type === "text"){
+      ctx.font = "bold " + a.size + "px 'Hiragino Maru Gothic ProN','Noto Sans JP',sans-serif";
+      var w = ctx.measureText(a.text).width;
+      return { x1:a.x, y1:a.y, x2:a.x + w, y2:a.y + a.size };
+    }
+    var x1 = Math.min(a.x1,a.x2), y1 = Math.min(a.y1,a.y2);
+    var x2 = Math.max(a.x1,a.x2), y2 = Math.max(a.y1,a.y2);
+    var pad = Math.max(8, (a.width||2) + 5);
+    return { x1:x1-pad, y1:y1-pad, x2:x2+pad, y2:y2+pad };
+  }
+  function hitTest(pt){
+    for(var i = annotations.length - 1; i >= 0; i--){
+      var b = annBBox(annotations[i]);
+      if(pt.x >= b.x1 && pt.x <= b.x2 && pt.y >= b.y1 && pt.y <= b.y2) return i;
+    }
+    return -1;
+  }
+
   /* ---------- マウス操作 ---------- */
   canvas.addEventListener("mousedown", function(e){
     if(!img) return;
+    if(tool === "move"){
+      var mp = toCanvas(e);
+      var idx = hitTest(mp);
+      if(idx >= 0){ moveTarget = idx; lastMovePt = mp; canvas.style.cursor = "grabbing"; }
+      return;
+    }
     if(tool === "text"){ openTextInput(e); return; }
     if(tool === "arrow" || tool === "rect"){
       drawing = true;
@@ -301,6 +331,14 @@
     }
   });
   window.addEventListener("mousemove", function(e){
+    if(moveTarget !== null){
+      var mp = toCanvas(e);
+      var dx = mp.x - lastMovePt.x, dy = mp.y - lastMovePt.y;
+      var a = annotations[moveTarget];
+      if(a.type === "text"){ a.x += dx; a.y += dy; }
+      else { a.x1 += dx; a.y1 += dy; a.x2 += dx; a.y2 += dy; }
+      lastMovePt = mp; redraw(); return;
+    }
     if(!drawing) return;
     curPt = toCanvas(e);
     redraw();
@@ -308,6 +346,7 @@
     else if(tool === "rect") drawRect(ctx, startPt.x,startPt.y, curPt.x,curPt.y, color, lineWidth);
   });
   window.addEventListener("mouseup", function(){
+    if(moveTarget !== null){ moveTarget = null; lastMovePt = null; canvas.style.cursor = "grab"; return; }
     if(!drawing) return;
     drawing = false;
     if(!startPt || !curPt) return;
