@@ -155,6 +155,7 @@
       <input type="file" id="fileInput" accept="image/*" hidden />
     </div>
     <div class="group" id="toolGroup">
+      <button class="tool" data-tool="move">🖐 移動</button>
       <button class="tool active" data-tool="rect">⬛ 四角</button>
       <button class="tool" data-tool="arrow">➜ 矢印</button>
       <button class="tool" data-tool="text">🅰 文字</button>
@@ -182,7 +183,7 @@
 
   <div class="stage" id="stage">
     <div class="empty" id="empty">
-      <div class="big">🩷</div>
+      <div class="big">📸</div>
       ここに <kbd>Cmd/Ctrl + V</kbd> で貼り付け<br />
       または「📁 画像を選ぶ」／ドラッグ&ドロップ
     </div>
@@ -190,7 +191,7 @@
   </div>
 
   <div class="hint">
-    文字ツールは画像をクリックで入力 ／ ぼかしは隠したい範囲をドラッグ ／ <kbd>Cmd/Ctrl + V</kbd> 貼り付け対応
+    🖐 移動ツールで置いた注釈をドラッグして動かせる ／ 文字ツールは画像をクリックで入力 ／ ぼかしは隠したい範囲をドラッグ ／ <kbd>Cmd/Ctrl + V</kbd> 貼り付け対応
   </div>
 </div>
 
@@ -215,6 +216,40 @@
   let drawing = false;
   let start = null;
   let temp = null;
+  let movingIndex = -1;   // 移動中の注釈インデックス
+  let moveStart = null;   // ドラッグ開始位置
+  let moveOrig = null;    // ドラッグ開始時の注釈の状態
+
+  function updateCursor(){
+    canvas.style.cursor = (tool==='move') ? 'move' : (tool==='text' ? 'text' : 'crosshair');
+  }
+
+  // 点と線分の距離（矢印のヒットテスト用）
+  function distToSeg(p,x1,y1,x2,y2){
+    const A=p.x-x1, B=p.y-y1, C=x2-x1, D=y2-y1;
+    const dot=A*C+B*D, len=C*C+D*D;
+    let t = len ? dot/len : 0;
+    t = Math.max(0, Math.min(1, t));
+    const xx=x1+t*C, yy=y1+t*D;
+    return Math.hypot(p.x-xx, p.y-yy);
+  }
+  // 上にある注釈を優先してヒットテスト
+  function hitTest(p){
+    for(let i=shapes.length-1; i>=0; i--){
+      const s = shapes[i];
+      if(s.type==='border') continue;
+      if(s.type==='rect' || s.type==='blur'){
+        if(p.x>=s.x-6 && p.x<=s.x+s.w+6 && p.y>=s.y-6 && p.y<=s.y+s.h+6) return i;
+      } else if(s.type==='text'){
+        ctx.font = s.size + 'px -apple-system, "Noto Sans JP", sans-serif';
+        const w = ctx.measureText(s.text).width;
+        if(p.x>=s.x-4 && p.x<=s.x+w+4 && p.y>=s.y-4 && p.y<=s.y+s.size+4) return i;
+      } else if(s.type==='arrow'){
+        if(distToSeg(p, s.x1,s.y1,s.x2,s.y2) <= Math.max(8, s.width+6)) return i;
+      }
+    }
+    return -1;
+  }
 
   function toast(msg){
     const t = document.getElementById('toast');
@@ -286,6 +321,7 @@
       tool = b.dataset.tool;
       blurCtl.style.display = (tool==='blur') ? 'flex' : 'none';
       if(tool==='border'){ addBorder(); }
+      updateCursor();
     });
   });
 
@@ -395,6 +431,16 @@
   function down(e){
     if(!baseImage) return;
     const p = pos(e);
+    if(tool==='move'){
+      const idx = hitTest(p);
+      if(idx>=0){
+        movingIndex = idx;
+        moveStart = p;
+        moveOrig = JSON.parse(JSON.stringify(shapes[idx]));
+        canvas.style.cursor = 'grabbing';
+      }
+      return;
+    }
     if(tool==='text'){
       const txt = prompt('入れる文字は？');
       if(txt){
@@ -409,6 +455,22 @@
     start = p;
   }
   function move(e){
+    if(tool==='move'){
+      const p = pos(e);
+      if(movingIndex<0){
+        canvas.style.cursor = (hitTest(p)>=0) ? 'grab' : 'move';
+        return;
+      }
+      const dx = p.x - moveStart.x, dy = p.y - moveStart.y;
+      const s = shapes[movingIndex], o = moveOrig;
+      if(s.type==='arrow'){
+        s.x1=o.x1+dx; s.y1=o.y1+dy; s.x2=o.x2+dx; s.y2=o.y2+dy;
+      } else {
+        s.x=o.x+dx; s.y=o.y+dy;
+      }
+      redraw();
+      return;
+    }
     if(!drawing) return;
     const p = pos(e);
     const c = colorInput.value, w = parseInt(widthInput.value,10);
@@ -422,6 +484,11 @@
     redraw();
   }
   function up(e){
+    if(tool==='move'){
+      movingIndex = -1;
+      updateCursor();
+      return;
+    }
     if(!drawing) return;
     drawing = false;
     if(temp){
