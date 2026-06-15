@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>スクショ編集ツール</title>
+<style>
+  :root{
+    --pink:#ff8fbf;
+    --pink-deep:#ff5fa2;
+    --pink-soft:#ffe3ef;
+    --bg:#fff5fa;
+    --ink:#5b4750;
+    --line:#ffd0e2;
+    --white:#ffffff;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:"Hiragino Maru Gothic ProN","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+    background:linear-gradient(160deg,var(--bg),#fff);
+    color:var(--ink);
+    padding:14px;
+    min-height:100vh;
+  }
+  .wrap{max-width:900px;margin:0 auto;}
+  h1{
+    font-size:16px;margin:0 0 10px;text-align:center;color:var(--pink-deep);
+    letter-spacing:.04em;
+  }
+  .toolbar{
+    display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+    background:var(--white);border:2px solid var(--line);border-radius:16px;
+    padding:8px 10px;margin-bottom:10px;
+    box-shadow:0 4px 14px rgba(255,143,191,.18);
+  }
+  .tbtn{
+    border:1.5px solid var(--line);background:#fff;color:var(--ink);
+    border-radius:999px;padding:6px 11px;font-size:13px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:4px;transition:.15s;
+    white-space:nowrap;
+  }
+  .tbtn:hover{background:var(--pink-soft);}
+  .tbtn.active{background:var(--pink);color:#fff;border-color:var(--pink);box-shadow:0 2px 8px rgba(255,95,162,.35);}
+  .sep{width:1px;height:22px;background:var(--line);margin:0 3px;}
+  .swatch{
+    width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid #fff;
+    box-shadow:0 0 0 1.5px var(--line);transition:.15s;
+  }
+  .swatch.active{box-shadow:0 0 0 2.5px var(--pink-deep);transform:scale(1.12);}
+  .label{font-size:12px;color:var(--pink-deep);font-weight:bold;}
+  input[type=range]{width:90px;accent-color:var(--pink-deep);}
+  .stage{
+    position:relative;border:2px dashed var(--line);border-radius:16px;
+    background:var(--white) repeating-linear-gradient(45deg,#fff 0 10px,#fff7fb 10px 20px);
+    min-height:240px;display:flex;align-items:center;justify-content:center;
+    overflow:auto;padding:14px;
+  }
+  .stage.drag{border-color:var(--pink-deep);background:var(--pink-soft);}
+  #canvas{max-width:100%;height:auto;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);cursor:crosshair;display:none;}
+  .empty{text-align:center;color:#c89bb0;font-size:14px;line-height:1.9;pointer-events:none;}
+  .empty .big{font-size:34px;display:block;margin-bottom:6px;}
+  #textInput{
+    position:absolute;display:none;border:1.5px solid var(--pink-deep);border-radius:6px;
+    padding:2px 6px;font-size:16px;background:#fff;color:#222;outline:none;min-width:40px;
+    box-shadow:0 2px 10px rgba(255,95,162,.3);
+  }
+  .footer{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px;}
+  .pbtn{
+    border:none;border-radius:999px;padding:10px 20px;font-size:14px;font-weight:bold;
+    cursor:pointer;transition:.15s;color:#fff;background:var(--pink);
+    box-shadow:0 4px 12px rgba(255,95,162,.3);
+  }
+  .pbtn:hover{background:var(--pink-deep);transform:translateY(-1px);}
+  .pbtn.ghost{background:#fff;color:var(--pink-deep);border:2px solid var(--line);box-shadow:none;}
+  .pbtn:disabled{opacity:.45;cursor:not-allowed;transform:none;}
+  .toast{
+    position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
+    background:var(--pink-deep);color:#fff;padding:10px 18px;border-radius:999px;
+    font-size:13px;opacity:0;transition:.25s;pointer-events:none;z-index:50;
+    box-shadow:0 6px 18px rgba(255,95,162,.4);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .hint{text-align:center;font-size:11px;color:#c89bb0;margin-top:8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🖍️ スクショ編集ツール</h1>
+  <div class="toolbar">
+    <button class="tbtn" id="pickBtn">📂 画像を選ぶ</button>
+    <input type="file" id="fileInput" accept="image/*" hidden />
+    <span class="sep"></span>
+    <button class="tbtn" data-tool="border" id="borderBtn">⬜ 枠線</button>
+    <button class="tbtn" data-tool="rect">▭ 四角</button>
+    <button class="tbtn" data-tool="arrow">➡️ 矢印</button>
+    <button class="tbtn" data-tool="text">🅰️ 文字</button>
+    <span class="sep"></span>
+    <span class="label">色</span>
+    <span class="swatch" style="background:#ff5fa2" data-color="#ff5fa2"></span>
+    <span class="swatch" style="background:#ff3b3b" data-color="#ff3b3b"></span>
+    <span class="swatch" style="background:#2db4ff" data-color="#2db4ff"></span>
+    <span class="swatch" style="background:#2c2c2c" data-color="#2c2c2c"></span>
+    <span class="swatch" style="background:#ffffff" data-color="#ffffff"></span>
+    <span class="sep"></span>
+    <span class="label">太さ</span>
+    <input type="range" id="widthRange" min="1" max="10" value="2" />
+    <span class="label" id="widthVal">2</span>
+    <span class="sep"></span>
+    <button class="tbtn" id="undoBtn">↩️ 戻す</button>
+    <button class="tbtn" id="clearBtn">🗑️ クリア</button>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="empty" id="empty">
+      <span class="big">📋</span>
+      ここにスクショを <b>Cmd / Ctrl + V</b> で貼り付け<br>
+      または「📂 画像を選ぶ」・ドラッグ&ドロップ
+    </div>
+    <canvas id="canvas"></canvas>
+    <input id="textInput" type="text" />
+  </div>
+
+  <div class="footer">
+    <button class="pbtn" id="downloadBtn" disabled>⬇️ ダウンロード</button>
+    <button class="pbtn ghost" id="copyBtn" disabled>📋 コピー</button>
+  </div>
+  <div class="hint">枠線=ワンクリックで外周に細枠 / 四角・矢印=ドラッグ / 文字=クリックして入力</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  var canvas = document.getElementById("canvas");
+  var ctx = canvas.getContext("2d");
+  var stage = document.getElementById("stage");
+  var empty = document.getElementById("empty");
+  var textInput = document.getElementById("textInput");
+
+  var img = null;            // 読み込んだ画像
+  var annotations = [];      // 注釈リスト {type,...}
+  var border = null;         // {color,width} or null
+  var tool = "arrow";
+  var color = "#ff5fa2";
+  var lineWidth = 2;
+  var drawing = false;
+  var startPt = null;
+  var curPt = null;
+
+  /* ---------- ツール選択 ---------- */
+  function setTool(t){
+    tool = t;
+    document.querySelectorAll(".tbtn[data-tool]").forEach(function(b){
+      b.classList.toggle("active", b.getAttribute("data-tool") === t);
+    });
+  }
+  document.querySelectorAll(".tbtn[data-tool]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var t = b.getAttribute("data-tool");
+      if(t === "border"){ toggleBorder(); return; }
+      setTool(t);
+    });
+  });
+
+  function toggleBorder(){
+    if(!img){ toast("先に画像を読み込んでね！"); return; }
+    if(border){ border = null; document.getElementById("borderBtn").classList.remove("active"); }
+    else { border = {color:color, width:lineWidth}; document.getElementById("borderBtn").classList.add("active"); }
+    redraw();
+  }
+
+  /* ---------- 色・太さ ---------- */
+  document.querySelectorAll(".swatch").forEach(function(s){
+    s.addEventListener("click", function(){
+      color = s.getAttribute("data-color");
+      document.querySelectorAll(".swatch").forEach(function(x){x.classList.remove("active");});
+      s.classList.add("active");
+      if(border){ border.color = color; redraw(); }
+    });
+  });
+  document.querySelector(".swatch").classList.add("active");
+
+  var widthRange = document.getElementById("widthRange");
+  var widthVal = document.getElementById("widthVal");
+  widthRange.addEventListener("input", function(){
+    lineWidth = parseInt(widthRange.value,10);
+    widthVal.textContent = lineWidth;
+    if(border){ border.width = lineWidth; redraw(); }
+  });
+
+  /* ---------- 画像読み込み ---------- */
+  function loadImage(src){
+    var im = new Image();
+    im.onload = function(){
+      img = im;
+      canvas.width = im.naturalWidth;
+      canvas.height = im.naturalHeight;
+      annotations = [];
+      border = null;
+      document.getElementById("borderBtn").classList.remove("active");
+      canvas.style.display = "block";
+      empty.style.display = "none";
+      document.getElementById("downloadBtn").disabled = false;
+      document.getElementById("copyBtn").disabled = false;
+      redraw();
+    };
+    im.onerror = function(){ toast("画像を読み込めなかったよ…"); };
+    im.src = src;
+  }
+  function handleFile(file){
+    if(!file || file.type.indexOf("image") !== 0) return;
+    var reader = new FileReader();
+    reader.onload = function(e){ loadImage(e.target.result); };
+    reader.readAsDataURL(file);
+  }
+
+  document.getElementById("pickBtn").addEventListener("click", function(){
+    document.getElementById("fileInput").click();
+  });
+  document.getElementById("fileInput").addEventListener("change", function(e){
+    if(e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+  });
+
+  /* 貼り付け */
+  window.addEventListener("paste", function(e){
+    var items = (e.clipboardData || window.clipboardData).items;
+    for(var i=0;i<items.length;i++){
+      if(items[i].type.indexOf("image") === 0){
+        handleFile(items[i].getAsFile());
+        e.preventDefault();
+        return;
+      }
+    }
+  });
+
+  /* ドラッグ&ドロップ */
+  stage.addEventListener("dragover", function(e){ e.preventDefault(); stage.classList.add("drag"); });
+  stage.addEventListener("dragleave", function(){ stage.classList.remove("drag"); });
+  stage.addEventListener("drop", function(e){
+    e.preventDefault(); stage.classList.remove("drag");
+    if(e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+
+  /* ---------- 座標変換 ---------- */
+  function toCanvas(e){
+    var rect = canvas.getBoundingClientRect();
+    var sx = canvas.width / rect.width;
+    var sy = canvas.height / rect.height;
+    return { x:(e.clientX - rect.left) * sx, y:(e.clientY - rect.top) * sy };
+  }
+
+  /* ---------- 描画 ---------- */
+  function drawArrow(c, x1,y1,x2,y2, col, w){
+    var head = Math.max(8, w*4);
+    var ang = Math.atan2(y2-y1, x2-x1);
+    c.strokeStyle = col; c.fillStyle = col;
+    c.lineWidth = w; c.lineCap = "round";
+    c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+    c.beginPath();
+    c.moveTo(x2,y2);
+    c.lineTo(x2 - head*Math.cos(ang - Math.PI/6), y2 - head*Math.sin(ang - Math.PI/6));
+    c.lineTo(x2 - head*Math.cos(ang + Math.PI/6), y2 - head*Math.sin(ang + Math.PI/6));
+    c.closePath(); c.fill();
+  }
+  function drawRect(c, x1,y1,x2,y2, col, w){
+    c.strokeStyle = col; c.lineWidth = w; c.lineJoin = "round";
+    c.strokeRect(Math.min(x1,x2), Math.min(y1,y2), Math.abs(x2-x1), Math.abs(y2-y1));
+  }
+  function drawText(c, a){
+    c.font = "bold " + a.size + "px 'Hiragino Maru Gothic ProN','Noto Sans JP',sans-serif";
+    c.textBaseline = "top";
+    c.fillStyle = a.color;
+    c.fillText(a.text, a.x, a.y);
+  }
+
+  function redraw(){
+    if(!img) return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    annotations.forEach(function(a){
+      if(a.type === "arrow") drawArrow(ctx, a.x1,a.y1,a.x2,a.y2, a.color, a.width);
+      else if(a.type === "rect") drawRect(ctx, a.x1,a.y1,a.x2,a.y2, a.color, a.width);
+      else if(a.type === "text") drawText(ctx, a);
+    });
+    if(border){
+      var w = border.width;
+      ctx.strokeStyle = border.color; ctx.lineWidth = w;
+      ctx.strokeRect(w/2, w/2, canvas.width - w, canvas.height - w);
+    }
+  }
+
+  /* ---------- マウス操作 ---------- */
+  canvas.addEventListener("mousedown", function(e){
+    if(!img) return;
+    if(tool === "text"){ openTextInput(e); return; }
+    if(tool === "arrow" || tool === "rect"){
+      drawing = true;
+      startPt = toCanvas(e);
+      curPt = startPt;
+    }
+  });
+  window.addEventListener("mousemove", function(e){
+    if(!drawing) return;
+    curPt = toCanvas(e);
+    redraw();
+    if(tool === "arrow") drawArrow(ctx, startPt.x,startPt.y, curPt.x,curPt.y, color, lineWidth);
+    else if(tool === "rect") drawRect(ctx, startPt.x,startPt.y, curPt.x,curPt.y, color, lineWidth);
+  });
+  window.addEventListener("mouseup", function(){
+    if(!drawing) return;
+    drawing = false;
+    if(!startPt || !curPt) return;
+    var moved = Math.abs(curPt.x-startPt.x) + Math.abs(curPt.y-startPt.y);
+    if(moved > 3){
+      if(tool === "arrow") annotations.push({type:"arrow", x1:startPt.x,y1:startPt.y, x2:curPt.x,y2:curPt.y, color:color, width:lineWidth});
+      else if(tool === "rect") annotations.push({type:"rect", x1:startPt.x,y1:startPt.y, x2:curPt.x,y2:curPt.y, color:color, width:lineWidth});
+    }
+    startPt = curPt = null;
+    redraw();
+  });
+
+  /* ---------- 文字入力 ---------- */
+  function openTextInput(e){
+    var rect = canvas.getBoundingClientRect();
+    var stageRect = stage.getBoundingClientRect();
+    var pt = toCanvas(e);
+    textInput.style.display = "block";
+    textInput.style.left = (e.clientX - stageRect.left) + "px";
+    textInput.style.top  = (e.clientY - stageRect.top) + "px";
+    textInput.style.color = color;
+    textInput.value = "";
+    textInput.dataset.x = pt.x;
+    textInput.dataset.y = pt.y;
+    textInput.dataset.size = Math.round(Math.max(16, lineWidth*9) * (canvas.width / rect.width));
+    setTimeout(function(){ textInput.focus(); }, 0);
+  }
+  function commitText(){
+    var t = textInput.value.trim();
+    if(t){
+      annotations.push({
+        type:"text", text:t,
+        x:parseFloat(textInput.dataset.x), y:parseFloat(textInput.dataset.y),
+        size:parseFloat(textInput.dataset.size), color:textInput.style.color || color
+      });
+    }
+    textInput.style.display = "none";
+    textInput.value = "";
+    redraw();
+  }
+  textInput.addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ e.preventDefault(); commitText(); }
+    else if(e.key === "Escape"){ textInput.style.display="none"; textInput.value=""; }
+  });
+  textInput.addEventListener("blur", commitText);
+
+  /* ---------- Undo / Clear ---------- */
+  document.getElementById("undoBtn").addEventListener("click", function(){
+    if(annotations.length){ annotations.pop(); }
+    else if(border){ border = null; document.getElementById("borderBtn").classList.remove("active"); }
+    redraw();
+  });
+  document.getElementById("clearBtn").addEventListener("click", function(){
+    annotations = []; border = null;
+    document.getElementById("borderBtn").classList.remove("active");
+    redraw();
+  });
+
+  /* ---------- 書き出し ---------- */
+  function stamp(){
+    var d = new Date();
+    function p(n){ return ("0"+n).slice(-2); }
+    return "" + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + "_" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+  }
+  document.getElementById("downloadBtn").addEventListener("click", function(){
+    if(!img) return;
+    canvas.toBlob(function(blob){
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = "screenshot_" + stamp() + ".png";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast("保存したよ！⬇️");
+    }, "image/png");
+  });
+  document.getElementById("copyBtn").addEventListener("click", function(){
+    if(!img) return;
+    if(!navigator.clipboard || !window.ClipboardItem){
+      toast("このブラウザはコピー非対応…ダウンロードを使ってね");
+      return;
+    }
+    canvas.toBlob(function(blob){
+      navigator.clipboard.write([ new ClipboardItem({ "image/png": blob }) ])
+        .then(function(){ toast("コピーしたよ！📋"); })
+        .catch(function(){ toast("コピーできなかった…ダウンロードを使ってね"); });
+    }, "image/png");
+  });
+
+  /* ---------- トースト ---------- */
+  var toastTimer = null;
+  function toast(msg){
+    var el = document.getElementById("toast");
+    el.textContent = msg; el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.classList.remove("show"); }, 1800);
+  }
+
+  setTool("arrow");
+})();
+</script>
+</body>
+</html>
